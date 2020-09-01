@@ -16,25 +16,20 @@
 
 package com.sun.mail.pop3;
 
-import java.util.*;
-import java.net.*;
-import java.io.*;
-import java.security.*;
-import java.util.logging.Level;
-import java.nio.charset.StandardCharsets;
-import javax.net.ssl.SSLSocket;
-
 import com.sun.mail.auth.Ntlm;
-import com.sun.mail.util.ASCIIUtility;
-import com.sun.mail.util.BASE64DecoderStream;
-import com.sun.mail.util.BASE64EncoderStream;
-import com.sun.mail.util.PropUtil;
-import com.sun.mail.util.MailLogger;
-import com.sun.mail.util.SocketFetcher;
-import com.sun.mail.util.LineInputStream;
-import com.sun.mail.util.TraceInputStream;
-import com.sun.mail.util.TraceOutputStream;
-import com.sun.mail.util.SharedByteArrayOutputStream;
+import com.sun.mail.util.*;
+
+import javax.net.ssl.SSLSocket;
+import java.io.*;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.*;
+import java.util.logging.Level;
 
 class Response {
     boolean ok = false;		// true if "+OK"
@@ -44,7 +39,7 @@ class Response {
 }
 
 /**
- * This class provides a POP3 connection and implements 
+ * This class provides a POP3 connection and implements
  * the POP3 protocol requests.
  *
  * APOP support courtesy of "chamness".
@@ -54,6 +49,8 @@ class Response {
 class Protocol {
     private Socket socket;		// POP3 socket
     private String host;		// host we're connected to
+    private int port;
+    private boolean isSSL;
     private Properties props;		// session properties
     private String prefix;		// protocol name prefix, for props
     private BufferedReader input;	// input buf
@@ -76,16 +73,19 @@ class Protocol {
     // sometimes the returned size isn't quite big enough
     private static final int SLOP = 128;
 
-    /** 
+    /**
      * Open a connection to the POP3 server.
      */
     Protocol(String host, int port, MailLogger logger,
 			Properties props, String prefix, boolean isSSL)
 			throws IOException {
 	this.host = host;
+	this.port = port;
 	this.props = props;
 	this.prefix = prefix;
 	this.logger = logger;
+	this.isSSL = isSSL;
+
 	traceLogger = logger.getSubLogger("protocol", null);
 	noauthdebug = !PropUtil.getBooleanProperty(props,
 			    "mail.debug.auth", false);
@@ -93,23 +93,13 @@ class Protocol {
 	Response r;
 	boolean enableAPOP = getBoolProp(props, prefix + ".apop.enable");
 	boolean disableCapa = getBoolProp(props, prefix + ".disablecapa");
-	try {
-	    if (port == -1)
-		port = POP3_PORT;
-	    if (logger.isLoggable(Level.FINE))
-		logger.fine("connecting to host \"" + host +
-				"\", port " + port + ", isSSL " + isSSL);
 
-	    socket = SocketFetcher.getSocket(host, port, props, prefix, isSSL);
-	    initStreams();
-	    r = simpleCommand(null);
-	} catch (IOException ioe) {
-	    throw cleanupAndThrow(socket, ioe);
-	}
+	r = openConnection();
 
 	if (!r.ok) {
 	    throw cleanupAndThrow(socket, new IOException("Connect failed"));
 	}
+
 	if (enableAPOP && r.data != null) {
 	    int challStart = r.data.indexOf('<');	// start of challenge
 	    int challEnd = r.data.indexOf('>', challStart); // end of challenge
@@ -142,6 +132,30 @@ class Protocol {
 	}
 	defaultAuthenticationMechanisms = sb.toString();
     }
+
+	private Response openConnection() throws IOException {
+		Response r;
+		int port = this.port;
+
+		try {
+			if (port == -1) {
+				port = POP3_PORT;
+			}
+
+			if (logger.isLoggable(Level.FINE)) {
+				logger.fine("connecting to host \"" + this.host +
+						"\", port " + port + ", isSSL " + this.isSSL);
+			}
+
+			socket = SocketFetcher.getSocket(host, port, props, prefix, isSSL);
+			initStreams();
+			r = simpleCommand(null);
+		} catch (IOException ioe) {
+			throw cleanupAndThrow(socket, ioe);
+		}
+
+		return r;
+	}
 
     private static IOException cleanupAndThrow(Socket socket, IOException ife) {
 	try {
@@ -393,7 +407,7 @@ class Protocol {
     }
 
     /**
-     * Gets the APOP message digest. 
+     * Gets the APOP message digest.
      * From RFC 1939:
      *
      * The 'digest' parameter is calculated by applying the MD5
@@ -461,11 +475,58 @@ class Protocol {
 		    logger.fine("AUTH " + mech + " command trace suppressed");
 		    suspendTracing();
 		}
-		if (ir != null)
-		    resp = simpleCommand("AUTH " + mech + " " +
-					    (ir.length() == 0 ? "=" : ir));
-		else
-		    resp = simpleCommand("AUTH " + mech);
+		if (ir != null) {
+			resp = simpleCommand("AUTH " + mech + " " +
+					(ir.length() == 0 ? "=" : ir));
+
+			/*
+			 * Fallback for two lines authentication format (e.g Microsoft 365 and Azure)
+			 * in order to establish successful connection. This is something that indeed might be patched on the Microsoft side one day.
+			 * though it is backward compatible and doesn't just come down to Microsoft
+			 * Details:
+			 * 	https://github.com/eclipse-ee4j/mail/issues/461
+			 * 	https://techcommunity.microsoft.com/t5/exchange-team-blog/announcing-oauth-support-for-pop-in-exchange-online/ba-p/1406600
+			 */
+			if (!resp.ok) {
+				if (logger.isLoggable(Level.FINE)) {
+					logger.fine("AUTH " + mech + " fallback for two lines authentication format");
+				}
+
+				/*
+				 * We are cleaning the connection as we have no idea what state the connection is in.
+				 * It might be terminated on server side e.g Microsoft: Protocol error. Connection is closed. 10
+				 * The only safe way to recover is to drop the connection.
+				 */
+				close();
+				if (logger.isLoggable(Level.FINE)) {
+					logger.fine("AUTH " + mech + " fallback - dropping current connection");
+				}
+
+				/*
+				 * We are opening new connection POP3 provider
+				 * and check whether the connection has been established successfully
+				 * if so we are retrying with two lines authentication format
+				 */
+				Response r = openConnection();
+
+				if (r.ok) {
+					if (logger.isLoggable(Level.FINE)) {
+						logger.fine("AUTH " + mech + " fallback - reconnected");
+					}
+
+					resp = twoLinesCommand(
+							"AUTH " + mech,
+							(ir.length() == 0 ? "=" : ir)
+					);
+				} else {
+					if (logger.isLoggable(Level.FINE)) {
+						logger.fine("AUTH " + mech + " fallback - couldn't established connection");
+					}
+				}
+			}
+		} else {
+			resp = simpleCommand("AUTH " + mech);
+		}
 
 		if (resp.cont)
 		    doAuth(host, authzid, user, passwd);
@@ -1108,6 +1169,25 @@ class Protocol {
 	    return null;
 	return r.bytes;
     }
+
+    /**
+     * Issue a two line POP3 command and return the response
+     * Refer to {@link #simpleCommand(String)} for a single line command
+     */
+    private Response twoLinesCommand(String firstCommand, String secondCommand) throws IOException {
+		String cmd = firstCommand + " " + secondCommand;
+
+		batchCommandStart(cmd);
+		issueCommand(firstCommand);
+		batchCommandContinue(cmd);
+		issueCommand(secondCommand);
+
+		Response r = readResponse();
+
+		batchCommandEnd();
+
+		return r;
+	}
 
     /**
      * Issue a simple POP3 command and return the response.

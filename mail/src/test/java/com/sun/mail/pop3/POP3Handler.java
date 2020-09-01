@@ -16,12 +16,11 @@
 
 package com.sun.mail.pop3;
 
+import com.sun.mail.test.ProtocolHandler;
+
 import java.io.IOException;
 import java.util.StringTokenizer;
-import java.util.logging.Logger;
 import java.util.logging.Level;
-
-import com.sun.mail.test.ProtocolHandler;
 
 /**
  * Handle connection.
@@ -138,7 +137,9 @@ public class POP3Handler extends ProtocolHandler {
         } else if (commandName.equals("PASS")) {
             this.pass();
         } else if (commandName.equals("CAPA")) {
-            this.println("-ERR CAPA not supported");
+        	this.capa();
+        } else if (commandName.equals("AUTH")) {
+			this.auth();
         } else {
             LOGGER.log(Level.SEVERE, "ERROR command unknown: {0}", commandName);
             this.println("-ERR unknown command");
@@ -275,5 +276,25 @@ public class POP3Handler extends ProtocolHandler {
      */
     public void pass() throws IOException {
         this.println("+OK");
+    }
+
+    /**
+     * CAPA command
+     *
+     * @throws IOException
+     *				unable to write to socket
+     */
+    public void capa() throws IOException {
+    	this.println("-ERR CAPA not supported");
+    }
+
+    /**
+     * AUTH command
+     *
+     * @throws IOException
+	 *				unable to write to socket
+     */
+    public void auth() throws IOException {
+        this.println("-ERR AUTH not supported");
     }
 }

@@ -16,16 +16,15 @@
 
 package com.sun.mail.pop3;
 
-import java.io.IOException;
-import java.util.Properties;
+import com.sun.mail.test.TestServer;
+import org.junit.Test;
 
 import javax.mail.Folder;
 import javax.mail.Session;
 import javax.mail.Store;
+import java.io.IOException;
+import java.util.Properties;
 
-import com.sun.mail.test.TestServer;
-
-import org.junit.Test;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
@@ -108,6 +107,125 @@ public final class POP3StoreTest {
             if (server != null) {
                 server.quit();
             }
+        }
+    }
+
+    /**
+     * Check whether POP3 XOAUTH2 connection can be established
+     */
+    @Test
+    public void testXOAUTH2POP3Connection() {
+        TestServer server = null;
+
+        try {
+            final POP3Handler handler = new POP3HandlerXOAUTH();
+            server = new TestServer(handler);
+            server.start();
+
+            final Properties properties = new Properties();
+            properties.setProperty("mail.pop3.host", "localhost");
+            properties.setProperty("mail.pop3.port", "" + server.getPort());
+            properties.setProperty("mail.pop3.auth.mechanisms", "XOAUTH2");
+
+            final Session session = Session.getInstance(properties);
+
+            final POP3Store store = (POP3Store) session.getStore("pop3");
+            try {
+                store.protocolConnect("localhost", server.getPort(), "test", "test");
+            } catch (Exception ex) {
+                System.out.println(ex);
+                ex.printStackTrace();
+                fail(ex.toString());
+            } finally {
+                store.close();
+            }
+        } catch (final Exception e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        } finally {
+            if (server != null) {
+                server.quit();
+            }
+        }
+    }
+
+    /**
+     * Check whether POP3 XOAUTH2 connection can be established using fallback with two lanes authentication format
+     */
+    @Test
+    public void testXOAUTH2POP3ConnectionFallback() {
+        TestServer server = null;
+
+        try {
+            final POP3Handler handler = new POP3HandlerXOAUTHFallback();
+            server = new TestServer(handler);
+            server.start();
+
+            final Properties properties = new Properties();
+            properties.setProperty("mail.pop3.host", "localhost");
+            properties.setProperty("mail.pop3.port", "" + server.getPort());
+            properties.setProperty("mail.pop3.auth.mechanisms", "XOAUTH2");
+            properties.setProperty("mail.pop3.disablecapa", "false");
+
+            final Session session = Session.getInstance(properties);
+
+            final POP3Store store = (POP3Store) session.getStore("pop3");
+            try {
+                store.protocolConnect("localhost", server.getPort(), "test", "test");
+            } catch (Exception ex) {
+                System.out.println(ex);
+                ex.printStackTrace();
+                fail(ex.toString());
+            } finally {
+                store.close();
+            }
+        } catch (final Exception e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        } finally {
+            if (server != null) {
+                server.quit();
+            }
+        }
+    }
+
+    /**
+     * Custom handler of AUTH command. Returns error during the first attempt to use run fallback path.
+     *
+     * @author Mateusz Marzęcki
+     */
+    private static class POP3HandlerXOAUTH extends POP3Handler {
+        @Override
+        public void auth() throws IOException {
+            this.println("+OK POP3 server ready");
+        }
+
+        @Override
+        public void capa() throws IOException {
+            this.writer.println("+ OK");
+            this.writer.println("SASL PLAIN XOAUTH2");
+            this.println(".");
+        }
+    }
+
+    /**
+     * Custom handler of AUTH command. Returns error during the first attempt to use run fallback path.
+     *
+     * @author Mateusz Marzęcki
+     */
+    private static final class POP3HandlerXOAUTHFallback extends POP3HandlerXOAUTH {
+        private static int execution = 0;
+
+        @Override
+        public void auth() throws IOException {
+            if (execution == 0) {
+                // returning ERR to go the fallback
+                this.println("-ERR Connection dropped");
+            } else if (execution == 1) {
+                this.println("+OK AUTH XOAUTH2 ....");
+            }
+
+            execution += 1;
         }
     }
 

@@ -475,54 +475,26 @@ class Protocol {
 		    logger.fine("AUTH " + mech + " command trace suppressed");
 		    suspendTracing();
 		}
+
+		Boolean isTwoLineAuthenticationFormat = PropUtil.getBooleanProperty(
+				props,
+				prefix + ".auth.two.line.authentication.format",
+				false);
+
 		if (ir != null) {
-			resp = simpleCommand("AUTH " + mech + " " +
-					(ir.length() == 0 ? "=" : ir));
+			if (logger.isLoggable(Level.FINE)) {
+				logger.fine("AUTH " + mech + " using " +
+						(isTwoLineAuthenticationFormat ? "two" : "one") + " line authentication format");
+			}
 
-			/*
-			 * Fallback for two lines authentication format (e.g Microsoft 365 and Azure)
-			 * in order to establish successful connection. This is something that indeed might be patched on the Microsoft side one day.
-			 * though it is backward compatible and doesn't just come down to Microsoft
-			 * Details:
-			 * 	https://github.com/eclipse-ee4j/mail/issues/461
-			 * 	https://techcommunity.microsoft.com/t5/exchange-team-blog/announcing-oauth-support-for-pop-in-exchange-online/ba-p/1406600
-			 */
-			if (!resp.ok) {
-				if (logger.isLoggable(Level.FINE)) {
-					logger.fine("AUTH " + mech + " fallback for two lines authentication format");
-				}
-
-				/*
-				 * We are cleaning the connection as we have no idea what state the connection is in.
-				 * It might be terminated on server side e.g Microsoft: Protocol error. Connection is closed. 10
-				 * The only safe way to recover is to drop the connection.
-				 */
-				close();
-				if (logger.isLoggable(Level.FINE)) {
-					logger.fine("AUTH " + mech + " fallback - dropping current connection");
-				}
-
-				/*
-				 * We are opening new connection POP3 provider
-				 * and check whether the connection has been established successfully
-				 * if so we are retrying with two lines authentication format
-				 */
-				Response r = openConnection();
-
-				if (r.ok) {
-					if (logger.isLoggable(Level.FINE)) {
-						logger.fine("AUTH " + mech + " fallback - reconnected");
-					}
-
-					resp = twoLinesCommand(
-							"AUTH " + mech,
-							(ir.length() == 0 ? "=" : ir)
-					);
-				} else {
-					if (logger.isLoggable(Level.FINE)) {
-						logger.fine("AUTH " + mech + " fallback - couldn't established connection");
-					}
-				}
+			if (!isTwoLineAuthenticationFormat) {
+				resp = simpleCommand("AUTH " + mech + " " +
+						(ir.length() == 0 ? "=" : ir));
+			} else {
+				resp = twoLinesCommand(
+						"AUTH " + mech,
+						(ir.length() == 0 ? "=" : ir)
+				);
 			}
 		} else {
 			resp = simpleCommand("AUTH " + mech);
@@ -1178,11 +1150,10 @@ class Protocol {
 		String cmd = firstCommand + " " + secondCommand;
 
 		batchCommandStart(cmd);
-		issueCommand(firstCommand);
+		simpleCommand(firstCommand);
 		batchCommandContinue(cmd);
-		issueCommand(secondCommand);
 
-		Response r = readResponse();
+		Response r = simpleCommand(secondCommand);
 
 		batchCommandEnd();
 

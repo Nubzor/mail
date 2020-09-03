@@ -93,13 +93,23 @@ class Protocol {
 	Response r;
 	boolean enableAPOP = getBoolProp(props, prefix + ".apop.enable");
 	boolean disableCapa = getBoolProp(props, prefix + ".disablecapa");
+	try {
+		if (port == -1)
+			port = POP3_PORT;
+		if (logger.isLoggable(Level.FINE))
+			logger.fine("connecting to host \"" + host +
+					"\", port " + port + ", isSSL " + isSSL);
 
-	r = openConnection();
+		socket = SocketFetcher.getSocket(host, port, props, prefix, isSSL);
+		initStreams();
+		r = simpleCommand(null);
+	} catch (IOException ioe) {
+		throw cleanupAndThrow(socket, ioe);
+	}
 
 	if (!r.ok) {
 	    throw cleanupAndThrow(socket, new IOException("Connect failed"));
 	}
-
 	if (enableAPOP && r.data != null) {
 	    int challStart = r.data.indexOf('<');	// start of challenge
 	    int challEnd = r.data.indexOf('>', challStart); // end of challenge
@@ -132,30 +142,6 @@ class Protocol {
 	}
 	defaultAuthenticationMechanisms = sb.toString();
     }
-
-	private Response openConnection() throws IOException {
-		Response r;
-		int port = this.port;
-
-		try {
-			if (port == -1) {
-				port = POP3_PORT;
-			}
-
-			if (logger.isLoggable(Level.FINE)) {
-				logger.fine("connecting to host \"" + this.host +
-						"\", port " + port + ", isSSL " + this.isSSL);
-			}
-
-			socket = SocketFetcher.getSocket(host, port, props, prefix, isSSL);
-			initStreams();
-			r = simpleCommand(null);
-		} catch (IOException ioe) {
-			throw cleanupAndThrow(socket, ioe);
-		}
-
-		return r;
-	}
 
     private static IOException cleanupAndThrow(Socket socket, IOException ife) {
 	try {

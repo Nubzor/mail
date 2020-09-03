@@ -94,15 +94,15 @@ class Protocol {
 	boolean enableAPOP = getBoolProp(props, prefix + ".apop.enable");
 	boolean disableCapa = getBoolProp(props, prefix + ".disablecapa");
 	try {
-		if (port == -1)
-			port = POP3_PORT;
-		if (logger.isLoggable(Level.FINE))
-			logger.fine("connecting to host \"" + host +
-					"\", port " + port + ", isSSL " + isSSL);
+	    if (port == -1)
+	        port = POP3_PORT;
+	    if (logger.isLoggable(Level.FINE))
+	        logger.fine("connecting to host \"" + host +
+	                            "\", port " + port + ", isSSL " + isSSL);
 
-		socket = SocketFetcher.getSocket(host, port, props, prefix, isSSL);
-		initStreams();
-		r = simpleCommand(null);
+	    socket = SocketFetcher.getSocket(host, port, props, prefix, isSSL);
+	    initStreams();
+	    r = simpleCommand(null);
 	} catch (IOException ioe) {
 		throw cleanupAndThrow(socket, ioe);
 	}
@@ -462,10 +462,9 @@ class Protocol {
 		    suspendTracing();
 		}
 
-		Boolean isTwoLineAuthenticationFormat = PropUtil.getBooleanProperty(
+		Boolean isTwoLineAuthenticationFormat = getBoolProp(
 				props,
-				prefix + ".auth.two.line.authentication.format",
-				false);
+				prefix + ".auth.two.line.authentication.format");
 
 		if (ir != null) {
 			if (logger.isLoggable(Level.FINE)) {

@@ -446,6 +446,18 @@ class Protocol {
 	    return enabled;
 	}
 
+	protected void runAuthenticationCommand(String command, String ir) throws IOException {
+		if (logger.isLoggable(Level.FINE)) {
+			logger.fine(command + " using one line authentication format");
+		}
+
+		if (ir != null) {
+			resp = simpleCommand(command + (ir.length() == 0 ? "=" : ir));
+		} else {
+			resp = simpleCommand(command);
+		}
+	}
+
 	/**
 	 * Start the authentication handshake by issuing the AUTH command.
 	 * Delegate to the doAuth method to do the mechanism-specific
@@ -462,28 +474,7 @@ class Protocol {
 		    suspendTracing();
 		}
 
-		Boolean isTwoLineAuthenticationFormat = getBoolProp(
-				props,
-				prefix + ".auth.two.line.authentication.format");
-
-		if (ir != null) {
-			if (logger.isLoggable(Level.FINE)) {
-				logger.fine("AUTH " + mech + " using " +
-						(isTwoLineAuthenticationFormat ? "two" : "one") + " line authentication format");
-			}
-
-			if (!isTwoLineAuthenticationFormat) {
-				resp = simpleCommand("AUTH " + mech + " " +
-						(ir.length() == 0 ? "=" : ir));
-			} else {
-				resp = twoLinesCommand(
-						"AUTH " + mech,
-						(ir.length() == 0 ? "=" : ir)
-				);
-			}
-		} else {
-			resp = simpleCommand("AUTH " + mech);
-		}
+		runAuthenticationCommand("AUTH " + mech, ir);
 
 		if (resp.cont)
 		    doAuth(host, authzid, user, passwd);
@@ -697,6 +688,26 @@ class Protocol {
 	    byte[] b = BASE64EncoderStream.encode(
 					resp.getBytes(StandardCharsets.UTF_8));
 	    return ASCIIUtility.toString(b);
+	}
+
+	@Override
+	protected void runAuthenticationCommand(String command, String ir) throws IOException {
+		Boolean isTwoLineAuthenticationFormat = getBoolProp(
+				props,
+				prefix + ".auth.two.line.authentication.format");
+
+		if (isTwoLineAuthenticationFormat) {
+			if (logger.isLoggable(Level.FINE)) {
+				logger.fine(command + " using two line authentication format");
+			}
+
+			resp = twoLinesCommand(
+					command,
+					(ir.length() == 0 ? "=" : ir)
+			);
+		} else {
+			super.runAuthenticationCommand(command, ir);
+		}
 	}
 
 	@Override

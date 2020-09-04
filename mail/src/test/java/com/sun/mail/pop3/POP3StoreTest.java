@@ -152,6 +152,7 @@ public final class POP3StoreTest {
     /**
      * Check whether POP3 XOAUTH2 connection can be established using single line authentication format
      * when the authentication format has ben set
+     * using: mail.pop3.xoauth.two.line.authentication.format property
      */
     @Test
     public void testXOAUTH2POP3ConnectionWithSingleLineAuthenticationFlag() {
@@ -167,7 +168,7 @@ public final class POP3StoreTest {
             properties.setProperty("mail.pop3.port", "" + server.getPort());
             properties.setProperty("mail.pop3.auth.mechanisms", "XOAUTH2");
             properties.setProperty("mail.pop3.disablecapa", "false");
-            properties.setProperty("mail.pop3.auth.two.line.authentication.format", "false");
+            properties.setProperty("mail.pop3.xoauth.two.line.authentication.format", "false");
 
             final Session session = Session.getInstance(properties);
 
@@ -193,7 +194,7 @@ public final class POP3StoreTest {
 
     /**
      * Check whether POP3 XOAUTH2 connection can be established using two line authentication format
-     * using: mail.pop3.two.line.authentication.format property
+     * using: mail.pop3.xoauth.two.line.authentication.format property
      */
     @Test
     public void testXOAUTH2POP3ConnectionWithTwoLineAuthenticationFlag() {
@@ -209,7 +210,7 @@ public final class POP3StoreTest {
             properties.setProperty("mail.pop3.port", "" + server.getPort());
             properties.setProperty("mail.pop3.auth.mechanisms", "XOAUTH2");
             properties.setProperty("mail.pop3.disablecapa", "false");
-            properties.setProperty("mail.pop3.auth.two.line.authentication.format", "true");
+            properties.setProperty("mail.pop3.xoauth.two.line.authentication.format", "true");
 
             final Session session = Session.getInstance(properties);
 
